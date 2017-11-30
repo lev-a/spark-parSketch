@@ -1,13 +1,15 @@
 # parSketch
 Massively Distributed Indexing of Time Series
-<Source code for ...paper>
+
 
 ## Abstract 
-This code is a Scala implementation of a sketch/random projection-based method to efficiently perform the parallel indexing of time series and similarity search on them.
+This code is a Scala implementation of a sketch/random projection-based method to efficiently perform the parallel indexing of time series and similarity search on them ([RadiusSketch: Massively Distributed Indexing of Time Series.pdf](https://hal-lirmm.ccsd.cnrs.fr/lirmm-01620154/file/ParSketch__DSAA_.pdf)).
  
-The method is based on the use of random vectors. The basic idea is to multiply each time series with a set of random vectors. The result of that operation is a ”sketch” for each time series consisting of the distance (or similarity) of the time series to each random vector. Then two time series can be compared by comparing sketches.
+The method is based on the use of random vectors. The basic idea is to multiply each time series with a set of random vectors. The result of that operation is a ”sketch” for each time series consisting of the distance (or similarity) of the time series to each random vector. Then similar items (sketches) are hashed to the same buckets (grid structures). Each grid consists the sketch values corresponding to a specific set of random vectors over all time series. 
 
-Similar items are hashed to the same buckets (grid structures). Each grid consists the sketch values corresponding to a specific set of random vectors over all time series. 
+Thus two time series can be compared by comparing sketches, so they consider to be similar if they are similar in a given fraction of grids.
+
+
 
 ## Getting Started
  
@@ -15,14 +17,10 @@ Similar items are hashed to the same buckets (grid structures). Each grid consis
 
 Resource Name | Resource Description | Supported Version  | Remarks
 ------------ | ------------- | ------------- | -------------
-Oracle Java | The Java Runtime Environment (JRE) is a software package to run Java and Scala applications  |8.0
-Apache Hadoop | Hadoop Distributed File System (HDFS™): A distributed file system that provides high-throughput access to application data  | v. 2.7.x 
+Oracle Java | The Java Runtime Environment (JRE) is a software package to run Java and Scala applications | 8.0
+Apache Hadoop | Hadoop Distributed File System (HDFS™): A distributed file system that provides high-throughput access to application data | v. 2.7.x 
 Apache Spark | Large-scale data processing framework | v. 2.1.0 or later 
 PostgreSQL | Relational database system to store indices and to provide more effective Query Processing on indexed data | v. 9.3.x or later| One instance of PostgreSQL server should be running on each node of a cluster. 
-
-
-
- 
 
 
 ### Installing 
