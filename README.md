@@ -53,13 +53,13 @@ Also you can run each stage as a separate call (running on a single input) with 
 
 <pre>
 #Grid construction
-    path_to_spark_bin/spark-submit --class fr.inria.zenith.adt.TSToDBMulti path_to_jar/parSketch-1.0-SNAPSHOT-jar-with-dependencies.jar --tsFilePath $file --sizeSketches $num --gridDimension $num --gridSize $num --batchSize $num --gridConstruction true  --numPart $num --tsNum $tsnum --nodesFile
+    path_to_spark_bin/spark-submit --class fr.inria.zenith.adt.TSToDBMulti path_to_jar/parSketch-1.0-SNAPSHOT-jar-with-dependencies.jar --tsFilePath path --sizeSketches val --gridDimension val --gridSize val --batchSize val --gridConstruction true  --numPart val --tsNum val --nodesFile path
 	
 #Index creation
-    path_to_spark_bin/spark-submit --class fr.inria.zenith.adt.TSToDBMulti path_to_jar/parSketch-1.0-SNAPSHOT-jar-with-dependencies.jar --tsFilePath $file --sizeSketches 30 --gridDimension 2 --gridSize $gridSize --batchSize 10000  --numPart $numpart --tsNum $tsnum
+    path_to_spark_bin/spark-submit --class fr.inria.zenith.adt.TSToDBMulti path_to_jar/parSketch-1.0-SNAPSHOT-jar-with-dependencies.jar --tsFilePath path --sizeSketches int_val --gridDimension int_val --gridSize int_val --batchSize int_val  --numPart int_val --tsNum int_val
     
 #Query processing
-    path_to_spark_bin/spark-submit --class fr.inria.zenith.adt.TSToDBMulti path_to_jar/parSketch-1.0-SNAPSHOT-jar-with-dependencies.jar --tsFilePath ts_256_$tsnum --sizeSketches 30 --gridDimension 2 --gridSize $gridSize --queryFilePath queries_$queries --candThresh $thresh --numPart $numpart --tsNum $tsnum
+    path_to_spark_bin/spark-submit --class fr.inria.zenith.adt.TSToDBMulti path_to_jar/parSketch-1.0-SNAPSHOT-jar-with-dependencies.jar --tsFilePath path --sizeSketches int_val --gridDimension int_val --gridSize int_val --queryFilePath path --candThresh dec_val --numPart int_val --tsNum int_val
     
     Options:
     
@@ -73,7 +73,7 @@ Also you can run each stage as a separate call (running on a single input) with 
     --numPart               Number of partitions for parallel data processing
     
     --queryFilePath         Path to a given collection of queries
-    --candThresh            Given threshold to find candidate time series from the grids  
+    --candThresh            Given threshold (fraction) to find candidate time series from the grids  
     --queryResPath          Path to the result of the query (Optional)
     --saveResult            Boolean parameter, if true - save result of query to file, false - statistics output to console [Default: false]
     --nodesFile             Path to the list of cluster nodes (hostname ips) [Default: nodes]
