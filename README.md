@@ -1,5 +1,5 @@
-# parSketch
-Massively Distributed Indexing of Time Series
+# spark-parSketch
+Massively Distributed Indexing of Time Series for Apache Spark
 
 
 ## Abstract 
