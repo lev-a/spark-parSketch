@@ -5,9 +5,9 @@ Massively Distributed Indexing of Time Series for Apache Spark
 ## Abstract 
 This code is a Scala implementation of a sketch/random projection-based method to efficiently perform the parallel indexing of time series and similarity search on them ([RadiusSketch: Massively Distributed Indexing of Time Series.pdf](https://hal-lirmm.ccsd.cnrs.fr/lirmm-01620154/file/ParSketch__DSAA_.pdf)).
  
-The method is based on the use of random vectors. The basic idea is to multiply each time series with a set of random vectors. The result of that operation is a ”sketch” for each time series consisting of the distance (or similarity) of the time series to each random vector. Then similar items (sketches) are hashed to the same buckets (grid structures). Each grid consists the sketch values corresponding to a specific set of random vectors over all time series. 
+The method is based on the use of random vectors. The basic idea is to multiply each time series with a set of random vectors. The result of that operation is a ”sketch” for each time series consisting of the distance (or similarity) of the time series to each random vector. Thus two time series can be compared by comparing sketches.
 
-Thus two time series can be compared by comparing sketches, so they consider to be similar if they are similar in a given fraction of grids.
+The approach uses a set of grid structures to hold the time series sketches. Each grid contains the sketch values corresponding to a specific set of random vectors over all time series. Two time series are considered to be similar if they are assigned to the same grid cell in a given fraction of grids.
 
 
 
@@ -32,9 +32,9 @@ The code is presented as a Maven-built project. An executable jar with all depen
 
 ## Running
 
-To run the project you can use both the bash script or directly run separate jars with spark-submit tool.  
+To run the project you can either use the bash script or directly run separate jars with the spark-submit tool.  
 
-By running bash script [parSketch_TSToDBMulti.sh](scripts/parSketch_TSToDBMulti.sh) you can perform the full cycle of the Index building on Time Series, including Data Generation*, Grid (Index) Construction and Query Processing stages. Also it allows to run Grid Construction on a multiple input. 
+By running the bash script [parSketch_TSToDBMulti.sh](scripts/parSketch_TSToDBMulti.sh) you can perform the full cycle of the Index building on Time Series, including Data Generation*, Grid (Index) Construction and Query Processing stages. It also allows to run Grid Construction on a multiple input. 
 
 
 <pre>
@@ -52,7 +52,7 @@ By running bash script [parSketch_TSToDBMulti.sh](scripts/parSketch_TSToDBMulti.
 *the jar for Data Generation must be in $workdir (see section Datasets)
 
 
-Also you can run each stage as a separate call (running on a single input) with the list of required options:
+Alternatively, you can run each stage as a separate call (running on a single input) with the list of required options:
 
 <pre>
 #Grid construction
