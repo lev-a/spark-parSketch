@@ -3,9 +3,12 @@ package fr.inria.zenith.adt
 
 import org.apache.commons.cli.{BasicParser, CommandLine, Options}
 import org.apache.hadoop.fs.{FileSystem, Path}
+import org.apache.spark.rdd.RDD
 import org.apache.spark.{SparkConf, SparkContext}
 
 import scala.util.control.Breaks._
+
+import math._
 
 
 /**
@@ -35,6 +38,9 @@ object TSToDBMulti {
       (for (i <- 0 until b) yield (scala.util.Random.nextInt(2) * 2 - 1).toFloat).toArray).toArray
   }
 
+  def distance(xs: Array[Float], ys: Array[Float]) =
+    sqrt((xs zip ys).map { case (x,y) => pow(y-x, 2)}.sum)
+
   def main(args: Array[String]): Unit = {
     // Command line parameters
     val options = new Options()
@@ -59,8 +65,8 @@ object TSToDBMulti {
     options.addOption("jdbcPassword", true, "Password to connect DB (Optional)")
     options.addOption("jdbcDriver", true, "JDBC driver to RDB (Optional) [Default: PostgreSQL]")
     options.addOption("queryResPath", true, "Path to the result of the query")
-    options.addOption("saveResult", true, "Boolean parameter [Default: false]")
-
+    options.addOption("saveResult", true, "Boolean parameter [Default: true]")
+    options.addOption("topCand", true, "Number of top candidates to save  [Default: 5]")
 
     val clParser = new BasicParser()
     val cmd: CommandLine = clParser.parse(options, args)
@@ -77,8 +83,9 @@ object TSToDBMulti {
     val queryFilePath = cmd.getOptionValue("queryFilePath", "")
     val gridConstruction = cmd.getOptionValue("gridConstruction", "false").toBoolean
     val queryResPath = cmd.getOptionValue("queryResPath", queryFilePath + "_result")
-    val saveResult = cmd.getOptionValue("saveResult", "false").toBoolean
+    val saveResult = cmd.getOptionValue("saveResult", "true").toBoolean
     val candThresh = cmd.getOptionValue("candThresh", "0").toFloat
+    val topCand = cmd.getOptionValue("topCand", "5").toInt
 
     val numGroups = sizeSketches / gridDimension
 
@@ -139,7 +146,7 @@ object TSToDBMulti {
 
     /** Index Construction **/
     if (!gridConstruction && candThresh==0) {
-
+      println("Index construction stage")
       val t1 = System.currentTimeMillis()
 
       rdbStorage.indexingGrids(urlList)
@@ -175,10 +182,28 @@ object TSToDBMulti {
 
       /** Saving query result to file or to console **/
       if (saveResult) {
-        queryRes.filter(_._2 > (candThresh * (sizeSketches / gridDimension)).toInt)
-          .coalesce(1)
-          .saveAsTextFile(queryResPath + "_" + t3)  //Store the candidates id's to the text file
-        System.out.println("Result saved to " + queryResPath + "_" + t3)
+        val queryResFlt: RDD[((Long,Long),Int)] = queryRes.filter(_._2 > (candThresh * (sizeSketches / gridDimension)).toInt)
+        if (queryResFlt.count>0) {
+          println(s"candThresh = $candThresh, candidates = " + queryResFlt.count)
+          val inputs = scala.io.Source.fromFile(tsFilePath).getLines().mkString(",")
+          val distFile = sc.objectFile[(Long, (Array[Float]))](inputs, numPart)
+
+
+          queryResFlt.map(v =>(v._1._2 -> (v._1._1, v._2)))
+            .join(distFile) //
+            .map(v => v._2._1._1 -> ((v._1, v._2._2), v._2._1._2))
+            .groupByKey
+            .join(queryFile)
+            .map(v => ((v._1, v._2._2), v._2._1))
+            .map{query =>
+              (query._1,query._2.map(ts => ts -> distance(ts._1._2,query._1._2)).toSeq.sortWith(_._2 < _._2).take(topCand))
+            }
+            .map(v => ((v._1._1, v._1._2.mkString("[",",","]")),v._2.map(c => (c._1._1._1,c._1._1._2.mkString("[",",","]"))-> c._2 )))
+            .coalesce(1)
+            .saveAsTextFile(queryResPath + "_" + t3)  //Storing the candidates, sorted by Euclidean distance, to the text file
+          println("Result saved to " + queryResPath + "_" + t3)
+        }
+        else println ("No candidates found.")
       }
       else {
         breakable {
