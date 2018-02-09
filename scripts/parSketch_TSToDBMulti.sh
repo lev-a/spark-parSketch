@@ -2,15 +2,17 @@
 
 tsnum=$1
 echo "tsnum: [$tsnum]"
-queries=$2
+
 thresh=${3:=((6/10))}
 gridSize=${5:=(2)}
-tsdir='/tmp/ts_256_$tsnum'
-workdir=${6:='/tmp'}
+tsdir="/tmp/ts_256_$tsnum"
+echo "tsdir=$tsdir"
+workdir=${6:-'/tmp'}
+
 
 #Path variables
-HADOOP=${HADOOP:='/tmp/hadoop'}
-SPARK=${SPARK:='/tmp/spark'}
+HADOOP=${HADOOP:-'/tmp/hadoop'}
+SPARK=${SPARK:-'/tmp/spark'}
 
 nodes=$(wc -l < nodes)
 cores=$(cat /proc/cpuinfo | grep processor | wc -l)
@@ -45,10 +47,8 @@ if [[ $4 =~ ^-?[0-9]+$ ]]; then
   timestp1=$(date +%s)
   echo "Data generation (elapsed time): $((($timestp1 - $timestp0)/60)) minutes ..."
 
-else ## Given Input file ##
-
-#if ! [[ $4 =~ ^-?[0-9]+$ ]]; then
- #if (( $# > 5 )); then
+else
+ ## Given Input file == if ! [[ $4 =~ ^-?[0-9]+$ ]]; then
  numDir=1
  echo "Input file: $4"
  rm -rf $tsdir
@@ -58,6 +58,7 @@ fi
 
 
 numpart=$(($tsnum/10000/$numDir))
+
 
 ### Grid construction ###
 
@@ -77,10 +78,16 @@ timestp3=$(date +%s)
 
 ### Query processing ###
 
-if ! $( $HADOOP/bin/hadoop fs -test -d queries_$queries ); then
- $SPARK/bin/spark-submit --class fr.inria.zenith.DataGenerator $workdir/tsGen-scala-1.0-SNAPSHOT.jar --numFiles 1 --tsNum $queries --tsSize 256 --outputPath queries_$queries
+### Query Data generation ###
+if [[ $2 =~ ^-?[0-9]+$ ]]; then
+queries=queries_$queries
+  if ! $( $HADOOP/bin/hadoop fs -test -d $queries ); then
+   $SPARK/bin/spark-submit --class fr.inria.zenith.DataGenerator $workdir/tsGen-scala-1.0-SNAPSHOT.jar --numFiles 1 --tsNum $2 --tsSize 256 --outputPath $queries
+  fi
+else
+queries=$2
 fi
 
-$SPARK/bin/spark-submit --class fr.inria.zenith.adt.TSToDBMulti $workdir/parSketch-1.0-SNAPSHOT-jar-with-dependencies.jar --tsFilePath ts_256_$tsnum --sizeSketches 30 --gridDimension 2 --gridSize $gridSize --queryFilePath queries_$queries --candThresh $thresh --numPart $numpart --tsNum $tsnum
+$SPARK/bin/spark-submit --class fr.inria.zenith.adt.TSToDBMulti $workdir/parSketch-1.0-SNAPSHOT-jar-with-dependencies.jar --tsFilePath $tsdir/listFiles.txt --sizeSketches 30 --gridDimension 2 --gridSize $gridSize --queryFilePath $queries --candThresh $thresh --numPart $numpart --tsNum $tsnum
 
 timestp4=$(date +%s)
