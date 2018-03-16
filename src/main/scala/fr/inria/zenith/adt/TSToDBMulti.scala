@@ -1,14 +1,15 @@
 // scalastyle:off println
 package fr.inria.zenith.adt
 
+import java.io.File
+
 import org.apache.commons.cli.{BasicParser, CommandLine, Options}
 import org.apache.hadoop.fs.{FileSystem, Path}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.{SparkConf, SparkContext}
 
+import scala.math._
 import scala.util.control.Breaks._
-
-import math._
 
 
 /**
@@ -145,7 +146,7 @@ object TSToDBMulti {
     }
 
     /** Index Construction **/
-    if (!gridConstruction && candThresh==0) {
+    if (!gridConstruction && candThresh==0) { //TODO or queryFilePath== ""
       println("Index construction stage")
       val t1 = System.currentTimeMillis()
 
@@ -172,7 +173,7 @@ object TSToDBMulti {
       val queryGrids = queryFile
         .map(t => (t._1, mult(t._2, RandMxGrids)))
         .flatMap(sc => sc._2.sliding(gridDimension, gridDimension).zipWithIndex.map(group => (group._2, (group._1.map(v => (v / gridSize).toInt).toArray, sc._1))))
-        .repartition(math.max(executors * coresPerEx * numGroups, numPart*10) )
+        .repartition(math.max(executors * coresPerEx * numGroups, numPart*10) ) // .partitionBy(new HashPartitioner(numGroups))
 
 
       val Query = queryGrids.mapPartitions(rdbStorage.queryDB(_, urlListFile))
@@ -185,23 +186,37 @@ object TSToDBMulti {
         val queryResFlt: RDD[((Long,Long),Int)] = queryRes.filter(_._2 > (candThresh * (sizeSketches / gridDimension)).toInt)
         if (queryResFlt.count>0) {
           println(s"candThresh = $candThresh, candidates = " + queryResFlt.count)
-          val inputs = scala.io.Source.fromFile(tsFilePath).getLines().mkString(",")
-          val distFile = sc.objectFile[(Long, (Array[Float]))](inputs, numPart)
+          val inputs = new File(tsFilePath).exists() match {
+            case true => scala.io.Source.fromFile(tsFilePath).getLines().mkString(",")
+            case false => tsFilePath
+          }
+            val distFile = sc.objectFile[(Long, (Array[Float]))](inputs, numPart)
 
+          val t4 = System.currentTimeMillis()
+          println("Query processing (Elapsed time): " + (t4 - t3) + " ms")
 
-          queryResFlt.map(v =>(v._1._2 -> (v._1._1, v._2)))
-            .join(distFile) //
-            .map(v => v._2._1._1 -> ((v._1, v._2._2), v._2._1._2))
-            .groupByKey
-            .join(queryFile)
-            .map(v => ((v._1, v._2._2), v._2._1))
-            .map{query =>
-              (query._1,query._2.map(ts => ts -> distance(ts._1._2,query._1._2)).toSeq.sortWith(_._2 < _._2).take(topCand))
-            }
-            .map(v => ((v._1._1, v._1._2.mkString("[",",","]")),v._2.map(c => (c._1._1._1,c._1._1._2.mkString("[",",","]"))-> c._2 )))
-            .coalesce(1)
-            .saveAsTextFile(queryResPath + "_" + t3)  //Storing the candidates, sorted by Euclidean distance, to the text file
-          println("Result saved to " + queryResPath + "_" + t3)
+            val jointRes = queryResFlt.map(v =>(v._1._2 -> (v._1._1, v._2)))
+              .join(distFile) //
+              .map(v => v._2._1._1 -> ((v._1, v._2._2), v._2._1._2))
+              .groupByKey
+              .join(queryFile)
+              .map(v => ((v._1, v._2._2), v._2._1))
+              .map{query =>
+                (query._1,query._2.map(ts => ts -> distance(ts._1._2,query._1._2)).toSeq.sortWith(_._2 < _._2).take(topCand)) //TODO <=topCand
+              }
+              .map(v => ((v._1._1, v._1._2.mkString("[",",","]")),v._2.map(c => (c._1._1._1,c._1._1._2.mkString("[",",","]"))-> c._2 )))
+              //.foreach(c => ((c._1._1._1,c._1._1._2.mkString(",")),c._2))))
+
+             // .coalesce(1)
+            //  .saveAsTextFile(queryResPath + "_" + t3)  //Storing the candidates, sorted by Euclidean distance, to the text file
+            //  println("Result saved to " + queryResPath + "_" + t3)
+          import java.io._
+          val resPath = tsFilePath +"_res_" + System.currentTimeMillis() + "_" + (System.currentTimeMillis() - t3)
+          val pw = new PrintWriter(new File(resPath))
+          pw.write(jointRes.map(_.toString).reduce(_ + '\n' + _))
+          pw.write("\n")
+          pw.close
+          println("Result saved to " + resPath)
         }
         else println ("No candidates found.")
       }
@@ -215,8 +230,8 @@ object TSToDBMulti {
         }
       }
 
-      val t4 = System.currentTimeMillis()
-      println("Query processing (Elapsed time): " + (t4 - t3) / 60000 + " min")
+      val t5 = System.currentTimeMillis()
+      println("QP + Save res  (Elapsed time): " + (t5 - t3) + " ms")
     }
    sc.stop()
   }
