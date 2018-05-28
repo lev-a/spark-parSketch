@@ -39,6 +39,9 @@ object TSToDBMulti {
       (for (i <- 0 until b) yield (scala.util.Random.nextInt(2) * 2 - 1).toFloat).toArray).toArray
   }
 
+  def distanceNorm(xs: (Array[Float],Float,Float), ys:(Array[Float],Float,Float)) =
+    sqrt((xs._1 zip ys._1).map { case (x,y) => pow((y - ys._2)/ys._3 - (x - xs._2)/xs._3, 2)}.sum)
+
   def distance(xs: Array[Float], ys: Array[Float]) =
     sqrt((xs zip ys).map { case (x,y) => pow(y-x, 2)}.sum)
 
@@ -67,7 +70,7 @@ object TSToDBMulti {
     options.addOption("jdbcDriver", true, "JDBC driver to RDB (Optional) [Default: PostgreSQL]")
     options.addOption("queryResPath", true, "Path to the result of the query")
     options.addOption("saveResult", true, "Boolean parameter [Default: true]")
-    options.addOption("topCand", true, "Number of top candidates to save  [Default: 5]")
+    options.addOption("topCand", true, "Number of top candidates to save  [Default: 10]")
 
     val clParser = new BasicParser()
     val cmd: CommandLine = clParser.parse(options, args)
@@ -77,7 +80,7 @@ object TSToDBMulti {
     val sizeSketches = cmd.getOptionValue("sizeSketches", "30").toInt
     val gridDimension = cmd.getOptionValue("gridDimension", "2").toInt
     val gridSize = cmd.getOptionValue("gridSize", "2").toInt
-    val numPart = cmd.getOptionValue("numPart", "8").toInt
+    val numPart = cmd.getOptionValue("numPart", "16").toInt
 
     val gridsResPath = cmd.getOptionValue("gridsResPath", "ts_gridsdb" + "_" + tsNum + "_" + sizeSketches + "_" + gridDimension + "_" + gridSize)
 
@@ -86,7 +89,7 @@ object TSToDBMulti {
     val queryResPath = cmd.getOptionValue("queryResPath", queryFilePath + "_result")
     val saveResult = cmd.getOptionValue("saveResult", "true").toBoolean
     val candThresh = cmd.getOptionValue("candThresh", "0").toFloat
-    val topCand = cmd.getOptionValue("topCand", "5").toInt
+    val topCand = cmd.getOptionValue("topCand", "10").toInt
 
     val numGroups = sizeSketches / gridDimension
 
@@ -120,7 +123,10 @@ object TSToDBMulti {
 
       println("Grid Construction stage for input: " + tsFilePath)
 
-      val distFile = sc.objectFile[(Long, (Array[Float]))](tsFilePath, numPart)
+      val distFile = sc.objectFile[(Long, Array[Float])](tsFilePath, numPart)
+
+      val distFileWithStats = distFile.map(t => (t._1, t._2, t._2.sum/t._2.length, t._2.map(x=>x*x).sum/t._2.length)).map(t => (t._1, t._2, t._3, sqrt(t._4-t._3*t._3).toFloat))
+      val distFileNorm = distFileWithStats.map(t => (t._1, t._2.map(x => (x-t._3)/t._4)))
 
       val RandMx = hdfs.exists(RndMxPath) match {
         case true => sc.objectFile[Array[Float]](RndMxPath.toString).collect()
@@ -134,26 +140,28 @@ object TSToDBMulti {
 
       val RandMxBroad = sc.broadcast(RandMx)
 
-      val res = distFile.map(t => (t._1, mult(t._2, RandMxBroad.value)))
+      val res = distFileNorm.map(t => (t._1, mult(t._2, RandMxBroad.value)))
+
       val groups2 = res.flatMap(sc => sc._2.sliding(gridDimension, gridDimension)
           .zipWithIndex
-          .map(group => ((group._2, group._1.map(v => (v / gridSize).toInt).toArray), sc._1)))
+          .map(group => ((group._2, group._1.map(v => (v / gridSize).toInt - (if (v < 0) 1 else 0)).toArray), sc._1)))
+
 
       groups2.foreachPartition(rdbStorage.insertPartition(_, urlList))
 
       val t1 = System.currentTimeMillis()
-      println("Grids construction for input: "+ tsFilePath + " (Elapsed time): " + (t1 - t0) / 60000 + " min")
+      println("Grids construction for input: "+ tsFilePath + " (Elapsed time): " + (t1 - t0)  + " ms")
     }
 
     /** Index Construction **/
-    if (!gridConstruction && candThresh==0) { //TODO or queryFilePath== ""
+    if (!gridConstruction && candThresh==0) {
       println("Index construction stage")
       val t1 = System.currentTimeMillis()
 
       rdbStorage.indexingGrids(urlList)
 
       val t2 = System.currentTimeMillis()
-      println("Index construction (Elapsed time): " + (t2 - t1) / 60000 + " min")
+      println("Index construction (Elapsed time): " + (t2 - t1)  + " ms")
     }
 
     /** Query  Processing **/
@@ -167,49 +175,49 @@ object TSToDBMulti {
       val urlListFile = sc.objectFile[String](urlHostsPath.toString).collect().toList
 
       val executors = sc.getExecutorMemoryStatus.size
-      val coresPerEx = sc.getConf.getInt("spark.executor.cores", 1)
+      val coresPerEx = sc.getConf.getInt("spark.executor.cores", 8)
 
-      val queryFile = sc.objectFile[(Long, (Array[Float]))](queryFilePath, executors * coresPerEx)
-      val queryGrids = queryFile
+      val queryFile = sc.objectFile[(Long, (Array[Float]))](queryFilePath, executors * coresPerEx*10)
+
+      val queryFileWithStats = queryFile.map(t => (t._1, t._2, t._2.sum/t._2.length, t._2.map( x => x*x ).sum/t._2.length)).map(t => (t._1, (t._2, t._3, sqrt(t._4-t._3*t._3).toFloat)))
+      val queryFileNorm = queryFileWithStats.map(t => (t._1, t._2._1.map( x => (x - t._2._2) / t._2._3 )))
+
+
+      val queryGrids = queryFileNorm
         .map(t => (t._1, mult(t._2, RandMxGrids)))
-        .flatMap(sc => sc._2.sliding(gridDimension, gridDimension).zipWithIndex.map(group => (group._2, (group._1.map(v => (v / gridSize).toInt).toArray, sc._1))))
-        .repartition(math.max(executors * coresPerEx * numGroups, numPart*10) ) // .partitionBy(new HashPartitioner(numGroups))
-
+        .flatMap(sc => sc._2.sliding(gridDimension, gridDimension).zipWithIndex.map(group => (group._2, (group._1.map(v => (v / gridSize).toInt - (if (v < 0) 1 else 0)).toArray, sc._1))))
+        .repartition(math.max(executors * coresPerEx * numGroups, numPart*10) )
 
       val Query = queryGrids.mapPartitions(rdbStorage.queryDB(_, urlListFile))
 
-
-      val queryRes = Query.reduceByKey(_ + _).cache()
+      val queryRes = Query.reduceByKey(_ + _)
 
       /** Saving query result to file or to console **/
       if (saveResult) {
         val queryResFlt: RDD[((Long,Long),Int)] = queryRes.filter(_._2 > (candThresh * (sizeSketches / gridDimension)).toInt)
-        if (queryResFlt.count>0) {
-          println(s"candThresh = $candThresh, candidates = " + queryResFlt.count)
+        if (!queryResFlt.isEmpty){
+          val t4 = System.currentTimeMillis()
+          println("Query processing (Elapsed time): " + (t4 - t3) + " ms")
+
           val inputs = new File(tsFilePath).exists() match {
             case true => scala.io.Source.fromFile(tsFilePath).getLines().mkString(",")
             case false => tsFilePath
           }
-            val distFile = sc.objectFile[(Long, (Array[Float]))](inputs, numPart)
 
-          val t4 = System.currentTimeMillis()
-          println("Query processing (Elapsed time): " + (t4 - t3) + " ms")
+          val distFile = sc.objectFile[(Long, (Array[Float]))](inputs, numPart)
+          val distFileWithStats = distFile.map(t => (t._1, t._2, t._2.sum/t._2.length, t._2.map( x => x*x ).sum/t._2.length)).map(t => (t._1, (t._2, t._3, sqrt(t._4-t._3*t._3).toFloat)))
 
-            val jointRes = queryResFlt.map(v =>(v._1._2 -> (v._1._1, v._2)))
-              .join(distFile) //
-              .map(v => v._2._1._1 -> ((v._1, v._2._2), v._2._1._2))
+          val jointRes = queryResFlt
+              .map(v =>(v._1._2, v._1._1))
+              .join(distFileWithStats)
+              .map(v => (v._2._1, (v._1, v._2._2)))
               .groupByKey
-              .join(queryFile)
-              .map(v => ((v._1, v._2._2), v._2._1))
-              .map{query =>
-                (query._1,query._2.map(ts => ts -> distance(ts._1._2,query._1._2)).toSeq.sortWith(_._2 < _._2).take(topCand)) //TODO <=topCand
-              }
-              .map(v => ((v._1._1, v._1._2.mkString("[",",","]")),v._2.map(c => (c._1._1._1,c._1._1._2.mkString("[",",","]"))-> c._2 )))
-              //.foreach(c => ((c._1._1._1,c._1._1._2.mkString(",")),c._2))))
+              .join(queryFileWithStats)
+              .map(v => ((v._1, v._2._2._1), v._2._1.map(ts => (ts._1, ts._2._1, distanceNorm(ts._2,v._2._2))).toSeq.sortWith(_._3 < _._3).take(topCand)))
+              .map(v => ((v._1._1, v._1._2.mkString("[",",","]")),v._2.map(c => (c._1,c._2.mkString("[",",","]"))-> c._3 )))
 
-             // .coalesce(1)
-            //  .saveAsTextFile(queryResPath + "_" + t3)  //Storing the candidates, sorted by Euclidean distance, to the text file
-            //  println("Result saved to " + queryResPath + "_" + t3)
+
+          /**  Storing the candidates, sorted by Euclidean distance, to the text file  **/
           import java.io._
           val resPath = tsFilePath +"_res_" + System.currentTimeMillis() + "_" + (System.currentTimeMillis() - t3)
           val pw = new PrintWriter(new File(resPath))
