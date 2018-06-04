@@ -100,7 +100,25 @@ object TSToDBMulti {
     val conf: SparkConf = new SparkConf().setAppName("Time Series Grid Construction")
     conf.set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
       .set("spark.kryo.registrationRequired", "true")
-    conf.registerKryoClasses(Array(classOf[Array[Float]], classOf[Array[String]], classOf[Array[Array[Float]]], classOf[scala.collection.mutable.ArraySeq[Float]], classOf[Array[Object]], classOf[scala.collection.immutable.Vector[Float]], Class.forName("[Lorg.apache.spark.util.collection.CompactBuffer;"), Class.forName("[Lscala.reflect.ClassTag$$anon$1;"), Class.forName("[I"), Class.forName("[B"), Class.forName("java.util.HashMap"), Class.forName("scala.collection.mutable.WrappedArray$ofRef")))
+    conf.registerKryoClasses(
+      Array(
+        classOf[Array[Float]],
+        classOf[Array[String]],
+        classOf[Array[Array[Float]]],
+        classOf[scala.collection.mutable.ArraySeq[Float]],
+        classOf[Array[Object]],
+        classOf[scala.collection.mutable.WrappedArray.ofRef[_]],
+        classOf[scala.collection.immutable.Vector[Float]],
+        Class.forName("[Lorg.apache.spark.util.collection.CompactBuffer;"),
+        Class.forName("[Lscala.reflect.ClassTag$$anon$1;"),
+        Class.forName("[I"),
+        Class.forName("[B"),
+        Class.forName("java.util.HashMap"),
+        Class.forName("scala.collection.mutable.WrappedArray$ofRef"),
+        Class.forName("org.apache.spark.internal.io.FileCommitProtocol$TaskCommitMessage"),
+        Class.forName("scala.collection.immutable.Set$EmptySet$")
+      )
+    )
     val sc: SparkContext = new SparkContext(conf)
 
     val hdfs = FileSystem.get(sc.hadoopConfiguration)
@@ -195,6 +213,7 @@ object TSToDBMulti {
       /** Saving query result to file or to console **/
       if (saveResult) {
         val queryResFlt: RDD[((Long,Long),Int)] = queryRes.filter(_._2 > (candThresh * (sizeSketches / gridDimension)).toInt)
+
         if (!queryResFlt.isEmpty){
           val t4 = System.currentTimeMillis()
           println("Query processing (Elapsed time): " + (t4 - t3) + " ms")
