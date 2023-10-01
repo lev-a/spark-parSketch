@@ -1,0 +1,4 @@
+A growing number of domains (finance, seismology, internet-ofthings, etc.) collect massive time series. When the number of series grow to the hundreds of millions or even billions, similarity
+queries become intractable on a single machine. Further, naive (quadratic) parallelization won’t work well. So, we need both efficient indexing and parallelization. 
+Spark-ParSketch is an efficient parallel indexing solution for the detection of similar time series using the sketch principle. 
+The basic idea is to multiply each time series with a set of random vectors, yielding a ”sketch” for each time series. Then, the index is a set of distributed grid structures holding the sketches.
