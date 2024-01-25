@@ -5,7 +5,7 @@ Massively Distributed Indexing of Time Series for Apache Spark
 ## Abstract 
 This code is a Scala implementation of a sketch/random projection-based method to efficiently perform the parallel indexing of time series and similarity search on them ([RadiusSketch: Massively Distributed Indexing of Time Series.pdf](https://hal-lirmm.ccsd.cnrs.fr/lirmm-01620154/file/ParSketch__DSAA_.pdf)).
  
-The method is based on the use of random vectors. The basic idea is to multiply each time series with a set of random vectors. The result of that operation is a ”sketch” for each time series consisting of the distance (or similarity) of the time series to each random vector. Thus two time series can be compared by comparing sketches.
+The method is based on random vectors. The basic idea is to multiply each time series with a set of random vectors (of +1 or -1 values). The result of that operation is a ”sketch” for each time series consisting of the distance (or similarity) of the time series to each random vector. Thus two time series can be compared by comparing sketches.
 
 The approach uses a set of grid structures to hold the time series sketches. Each grid contains the sketch values corresponding to a specific set of random vectors over all time series. Two time series are considered to be similar if they are assigned to the same grid cell in a given fraction of grids.
 
